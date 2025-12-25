@@ -273,8 +273,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     }
 
     private boolean isSupportedAudioFile(File file) {
-        String name = file.getName().toLowerCase();
-        return name.endsWith(".mp3") || name.endsWith(".flac");
+        return isSupportedAudioFile(file.getName());
     }
 
     private boolean isSupportedAudioFile(String name) {
@@ -306,6 +305,9 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         }
 
         DocumentFile[] files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
         for (DocumentFile file : files) {
             if (file.isDirectory()) {
                 findMusicFilesFromDocument(file, songs);
