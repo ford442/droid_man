@@ -5,6 +5,7 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -18,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
+import androidx.documentfile.provider.DocumentFile;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -42,6 +44,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
 
     private ActivityResultLauncher<String> requestPermissionLauncher;
     private ActivityResultLauncher<String[]> requestMultiplePermissionsLauncher;
+    private ActivityResultLauncher<Uri> openFolderLauncher;
 
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
@@ -122,6 +125,18 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
                         Toast.makeText(this, R.string.permission_required, Toast.LENGTH_SHORT).show();
                     }
                 });
+
+        // Modern folder picker using Storage Access Framework
+        openFolderLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocumentTree(),
+                uri -> {
+                    if (uri != null) {
+                        // Persist permission for future access
+                        getContentResolver().takePersistableUriPermission(uri,
+                                Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        loadSongsFromDocumentUri(uri);
+                    }
+                });
     }
 
     private void setupRecyclerView() {
@@ -182,6 +197,25 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     }
 
     private void showFolderSelectionDialog() {
+        // For Android 10+ (API 29+), use Storage Access Framework as primary option
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Select Music Folder")
+                    .setMessage("Choose how to select your music folder")
+                    .setPositiveButton("Browse Folders", (dialog, which) -> {
+                        openFolderLauncher.launch(null);
+                    })
+                    .setNeutralButton("Quick Select", (dialog, which) -> {
+                        showLegacyFolderSelectionDialog();
+                    })
+                    .setNegativeButton("Cancel", null)
+                    .show();
+        } else {
+            showLegacyFolderSelectionDialog();
+        }
+    }
+
+    private void showLegacyFolderSelectionDialog() {
         File musicDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC);
         File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
         File externalStorage = Environment.getExternalStorageDirectory();
@@ -239,8 +273,51 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     }
 
     private boolean isSupportedAudioFile(File file) {
-        String name = file.getName().toLowerCase();
-        return name.endsWith(".mp3") || name.endsWith(".flac");
+        return isSupportedAudioFile(file.getName());
+    }
+
+    private boolean isSupportedAudioFile(String name) {
+        String lowerName = name.toLowerCase();
+        return lowerName.endsWith(".mp3") || lowerName.endsWith(".flac");
+    }
+
+    private void loadSongsFromDocumentUri(Uri uri) {
+        List<Song> songs = new ArrayList<>();
+        DocumentFile documentFile = DocumentFile.fromTreeUri(this, uri);
+        if (documentFile != null) {
+            findMusicFilesFromDocument(documentFile, songs);
+        }
+
+        if (songs.isEmpty()) {
+            Toast.makeText(this, R.string.no_songs, Toast.LENGTH_SHORT).show();
+        } else {
+            adapter.setSongs(songs);
+            if (serviceBound && musicService != null) {
+                musicService.setPlaylist(songs);
+            }
+            Toast.makeText(this, "Found " + songs.size() + " songs", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void findMusicFilesFromDocument(DocumentFile directory, List<Song> songs) {
+        if (directory == null || !directory.isDirectory()) {
+            return;
+        }
+
+        DocumentFile[] files = directory.listFiles();
+        if (files == null) {
+            return;
+        }
+        for (DocumentFile file : files) {
+            if (file.isDirectory()) {
+                findMusicFilesFromDocument(file, songs);
+            } else {
+                String name = file.getName();
+                if (name != null && isSupportedAudioFile(name)) {
+                    songs.add(new Song(file.getUri(), name));
+                }
+            }
+        }
     }
 
     @Override
