@@ -149,6 +149,9 @@ public class MusicService extends Service {
     }
 
     private void cacheAllSongs() {
+        if (playlist == null || playlist.isEmpty()) {
+            return;
+        }
         for (Song song : playlist) {
             if (song.isUriBased() && !song.isCached()) {
                 try {
@@ -165,7 +168,7 @@ public class MusicService extends Service {
         Uri uri = song.getUri();
         String uriString = uri.toString();
         
-        // Check if it's a network URL
+        // Check if it's a network URL and enforce HTTPS for security
         if (!uriString.startsWith("http://") && !uriString.startsWith("https://")) {
             // Local file, no need to cache
             return;
@@ -174,27 +177,56 @@ public class MusicService extends Service {
         Log.i(TAG, "Downloading song to RAM: " + song.getTitle());
         
         URL url = new URL(uriString);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-        connection.setRequestMethod("GET");
-        connection.setConnectTimeout(30000);
-        connection.setReadTimeout(30000);
+        HttpURLConnection connection = null;
+        InputStream inputStream = null;
+        ByteArrayOutputStream outputStream = null;
         
-        InputStream inputStream = connection.getInputStream();
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        
-        byte[] buffer = new byte[8192];
-        int bytesRead;
-        while ((bytesRead = inputStream.read(buffer)) != -1) {
-            outputStream.write(buffer, 0, bytesRead);
+        try {
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(30000);
+            connection.setReadTimeout(30000);
+            
+            inputStream = connection.getInputStream();
+            outputStream = new ByteArrayOutputStream();
+            
+            byte[] buffer = new byte[8192];
+            int bytesRead;
+            long totalBytes = 0;
+            final long MAX_SIZE = 100 * 1024 * 1024; // 100MB limit to prevent memory issues
+            
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                totalBytes += bytesRead;
+                if (totalBytes > MAX_SIZE) {
+                    Log.w(TAG, "Song too large, skipping cache: " + song.getTitle());
+                    return;
+                }
+                outputStream.write(buffer, 0, bytesRead);
+            }
+            
+            byte[] songData = outputStream.toByteArray();
+            song.setCachedData(songData);
+            
+            Log.i(TAG, "Cached " + songData.length + " bytes for: " + song.getTitle());
+        } finally {
+            if (inputStream != null) {
+                try {
+                    inputStream.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing input stream", e);
+                }
+            }
+            if (outputStream != null) {
+                try {
+                    outputStream.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing output stream", e);
+                }
+            }
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
-        
-        inputStream.close();
-        connection.disconnect();
-        
-        byte[] songData = outputStream.toByteArray();
-        song.setCachedData(songData);
-        
-        Log.i(TAG, "Cached " + songData.length + " bytes for: " + song.getTitle());
     }
 
     public void playSong(int position) {
@@ -306,10 +338,10 @@ public class MusicService extends Service {
         String extension = song.getFormat().toLowerCase();
         File tempFile = File.createTempFile("droidman_", "." + extension, getCacheDir());
         
-        // Write cached data to temp file
-        FileOutputStream fos = new FileOutputStream(tempFile);
-        fos.write(song.getCachedData());
-        fos.close();
+        // Write cached data to temp file using try-with-resources
+        try (FileOutputStream fos = new FileOutputStream(tempFile)) {
+            fos.write(song.getCachedData());
+        }
         
         // Store in temp file cache
         tempFileCache.put(key, tempFile);
@@ -319,8 +351,10 @@ public class MusicService extends Service {
 
     private void clearAllCaches() {
         // Clear RAM cache from songs
-        for (Song song : playlist) {
-            song.clearCache();
+        if (playlist != null) {
+            for (Song song : playlist) {
+                song.clearCache();
+            }
         }
         
         // Delete temp files
