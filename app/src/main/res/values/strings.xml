@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">DroidMan</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="stop">Stop</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="no_songs">No songs found</string>
+    <string name="loading">Loading songs...</string>
+    <string name="select_folder">Select Music Folder</string>
+    <string name="permission_required">Storage permission required to access music files</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="now_playing">Now Playing</string>
+    <string name="supported_formats">Supports FLAC and MP3 formats</string>
+</resources>
