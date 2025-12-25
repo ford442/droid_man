@@ -23,9 +23,18 @@ import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.Player;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MusicService extends Service {
     
@@ -45,6 +54,8 @@ public class MusicService extends Service {
     private int currentPosition = -1;
     private PlaybackListener playbackListener;
     private NotificationActionReceiver notificationActionReceiver;
+    private ExecutorService downloadExecutor;
+    private Map<String, File> tempFileCache = new HashMap<>();
 
     public interface PlaybackListener {
         void onSongChanged(Song song, int position);
@@ -63,6 +74,7 @@ public class MusicService extends Service {
         createNotificationChannel();
         initializePlayer();
         registerNotificationReceiver();
+        downloadExecutor = Executors.newSingleThreadExecutor();
     }
     
     private void registerNotificationReceiver() {
@@ -132,6 +144,57 @@ public class MusicService extends Service {
 
     public void setPlaylist(List<Song> songs) {
         this.playlist = new ArrayList<>(songs);
+        // Start caching songs in the background
+        downloadExecutor.execute(() -> cacheAllSongs());
+    }
+
+    private void cacheAllSongs() {
+        for (Song song : playlist) {
+            if (song.isUriBased() && !song.isCached()) {
+                try {
+                    downloadAndCacheSong(song);
+                } catch (Exception e) {
+                    Log.e(TAG, "Error caching song: " + song.getTitle(), e);
+                }
+            }
+        }
+        Log.i(TAG, "All songs cached for offline playback");
+    }
+
+    private void downloadAndCacheSong(Song song) throws Exception {
+        Uri uri = song.getUri();
+        String uriString = uri.toString();
+        
+        // Check if it's a network URL
+        if (!uriString.startsWith("http://") && !uriString.startsWith("https://")) {
+            // Local file, no need to cache
+            return;
+        }
+        
+        Log.i(TAG, "Downloading song to RAM: " + song.getTitle());
+        
+        URL url = new URL(uriString);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("GET");
+        connection.setConnectTimeout(30000);
+        connection.setReadTimeout(30000);
+        
+        InputStream inputStream = connection.getInputStream();
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        
+        byte[] buffer = new byte[8192];
+        int bytesRead;
+        while ((bytesRead = inputStream.read(buffer)) != -1) {
+            outputStream.write(buffer, 0, bytesRead);
+        }
+        
+        inputStream.close();
+        connection.disconnect();
+        
+        byte[] songData = outputStream.toByteArray();
+        song.setCachedData(songData);
+        
+        Log.i(TAG, "Cached " + songData.length + " bytes for: " + song.getTitle());
     }
 
     public void playSong(int position) {
@@ -143,7 +206,34 @@ public class MusicService extends Service {
         Song song = playlist.get(position);
         
         MediaItem mediaItem;
-        if (song.isUriBased()) {
+        
+        // Check if song is cached in RAM
+        if (song.isCached()) {
+            // Use cached data
+            try {
+                File tempFile = createTempFileFromCache(song);
+                mediaItem = MediaItem.fromUri(Uri.fromFile(tempFile));
+                Log.i(TAG, "Playing from cache: " + song.getTitle());
+            } catch (Exception e) {
+                Log.e(TAG, "Error creating temp file from cache", e);
+                // Fallback to streaming
+                if (song.isUriBased()) {
+                    mediaItem = MediaItem.fromUri(song.getUri());
+                } else {
+                    mediaItem = MediaItem.fromUri(Uri.fromFile(song.getFile()));
+                }
+            }
+        } else if (song.isUriBased()) {
+            // If not cached yet, download and cache in background, but stream for now
+            if (song.getUri().toString().startsWith("http")) {
+                downloadExecutor.execute(() -> {
+                    try {
+                        downloadAndCacheSong(song);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error caching song on play", e);
+                    }
+                });
+            }
             mediaItem = MediaItem.fromUri(song.getUri());
         } else {
             mediaItem = MediaItem.fromUri(Uri.fromFile(song.getFile()));
@@ -199,6 +289,49 @@ public class MusicService extends Service {
             return playlist.get(currentPosition);
         }
         return null;
+    }
+
+    private File createTempFileFromCache(Song song) throws Exception {
+        String key = song.getPath();
+        
+        // Check if we already have a temp file for this song
+        if (tempFileCache.containsKey(key)) {
+            File existingFile = tempFileCache.get(key);
+            if (existingFile != null && existingFile.exists()) {
+                return existingFile;
+            }
+        }
+        
+        // Create a new temp file
+        String extension = song.getFormat().toLowerCase();
+        File tempFile = File.createTempFile("droidman_", "." + extension, getCacheDir());
+        
+        // Write cached data to temp file
+        FileOutputStream fos = new FileOutputStream(tempFile);
+        fos.write(song.getCachedData());
+        fos.close();
+        
+        // Store in temp file cache
+        tempFileCache.put(key, tempFile);
+        
+        return tempFile;
+    }
+
+    private void clearAllCaches() {
+        // Clear RAM cache from songs
+        for (Song song : playlist) {
+            song.clearCache();
+        }
+        
+        // Delete temp files
+        for (File tempFile : tempFileCache.values()) {
+            if (tempFile != null && tempFile.exists()) {
+                tempFile.delete();
+            }
+        }
+        tempFileCache.clear();
+        
+        Log.i(TAG, "All caches cleared");
     }
 
     private void createNotificationChannel() {
@@ -287,6 +420,12 @@ public class MusicService extends Service {
         if (player != null) {
             player.release();
             player = null;
+        }
+        // Clear all cached data
+        clearAllCaches();
+        // Shutdown download executor
+        if (downloadExecutor != null) {
+            downloadExecutor.shutdown();
         }
         stopForeground(true);
     }

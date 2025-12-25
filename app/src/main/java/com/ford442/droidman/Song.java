@@ -11,6 +11,7 @@ public class Song {
     private String artist;
     private String format;
     private String path;
+    private byte[] cachedData; // Store song data in RAM for offline playback
 
     // Constructor for File-based songs (legacy)
     public Song(File file) {
@@ -74,5 +75,21 @@ public class Song {
             return name.substring(lastDot + 1).toUpperCase();
         }
         return "";
+    }
+
+    public byte[] getCachedData() {
+        return cachedData;
+    }
+
+    public void setCachedData(byte[] cachedData) {
+        this.cachedData = cachedData;
+    }
+
+    public boolean isCached() {
+        return cachedData != null;
+    }
+
+    public void clearCache() {
+        cachedData = null;
     }
 }
