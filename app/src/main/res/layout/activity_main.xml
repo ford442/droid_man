@@ -31,6 +31,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/tvTitle" />
 
+    <TextView
+        android:id="@+id/tvDeviceStatus"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="RAM: -- | Storage: --"
+        android:textSize="11sp"
+        android:textColor="@color/teal_200"
+        android:gravity="center"
+        android:layout_marginTop="4dp"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/tvSubtitle" />
+
     <Button
         android:id="@+id/btnSelectFolder"
         android:layout_width="0dp"
@@ -39,7 +52,7 @@
         android:layout_marginTop="16dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/tvSubtitle" />
+        app:layout_constraintTop_toBottomOf="@id/tvDeviceStatus" />
 
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recyclerView"
