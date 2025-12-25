@@ -5,9 +5,11 @@ Like a walkman for smartphone. This APK app saves FLAC/MP3 songs for offline lis
 ## Features
 
 - **Offline Music Playback**: Browse and play FLAC and MP3 files from your device
+- **Automatic Caching**: Songs from cloud sources are downloaded and cached in RAM for offline playback
 - **Background Playback**: Continue listening while using other apps
 - **Simple Controls**: Play, pause, next, previous controls
 - **Format Support**: Native support for MP3 and FLAC audio formats using ExoPlayer
+- **Cloud Support**: Load songs from Google Cloud Storage buckets
 - **Automatic Cleanup**: Music cache is cleared when the app is closed
 
 ## Requirements
@@ -52,11 +54,24 @@ Or transfer the APK to your device and install manually.
 
 1. Launch the app
 2. Grant storage permissions when prompted
-3. Tap "Select Music Folder" to choose a folder containing your music files
+3. Tap "Select Music Folder" to choose a music source:
+   - **Browse Device Folders**: Select local folders with MP3/FLAC files
+   - **Connect to Cloud Bucket**: Load songs from Google Cloud Storage
 4. Browse and tap on songs to play them
 5. Use the playback controls to control playback
-6. The app will cache songs for offline listening while it's running
-7. When you close the app, the cache is automatically cleared
+6. **Automatic Caching**: Songs from cloud sources are automatically downloaded and cached in RAM for offline playback
+7. **Offline Mode**: Once cached, songs can be played without WiFi or mobile data
+8. When you close the app, the cache is automatically cleared
+
+## How Caching Works
+
+- When you load songs from a cloud source, they are automatically downloaded in the background
+- Downloaded songs are stored in RAM (up to 100MB per song)
+- Once cached, songs play instantly without requiring internet connection
+- Local files (from device storage) don't need caching as they're already offline
+- Cache is cleared when the app is closed to free up memory
+
+For technical details, see [OFFLINE_CACHING.md](OFFLINE_CACHING.md)
 
 ## Supported Formats
 
