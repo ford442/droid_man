@@ -234,7 +234,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
 
         // Change color if RAM is low (below 200MB approx)
         if (memoryInfo.availMem < 200 * 1024 * 1024) {
-            tvDeviceStatus.setTextColor(getResources().getColor(android.R.color.holo_red_light));
+            tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_light));
         }
 
         tvDeviceStatus.setText(statusText);
