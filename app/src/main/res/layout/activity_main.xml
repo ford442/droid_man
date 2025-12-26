@@ -23,7 +23,7 @@
         android:id="@+id/tvSubtitle"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="@string/supported_formats"
+        android:text="Tap cloud songs to add to RAM"
         android:textSize="12sp"
         android:gravity="center"
         android:layout_marginTop="4dp"
@@ -45,10 +45,10 @@
         app:layout_constraintTop_toBottomOf="@id/tvSubtitle" />
 
     <Button
-        android:id="@+id/btnSelectFolder"
+        android:id="@+id/btnSwitchView"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="@string/select_folder"
+        android:text="View: Cloud Library"
         android:layout_marginTop="16dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -63,7 +63,7 @@
         app:layout_constraintBottom_toTopOf="@id/nowPlayingCard"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/btnSelectFolder" />
+        app:layout_constraintTop_toBottomOf="@id/btnSwitchView" />
 
     <androidx.cardview.widget.CardView
         android:id="@+id/nowPlayingCard"
