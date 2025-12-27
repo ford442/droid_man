@@ -14,11 +14,11 @@ import android.os.IBinder;
 import android.os.StatFs;
 import android.text.format.Formatter;
 import android.widget.Button;
-import android.widget.EditText;
+import android.widget.EditText; // No longer needed, but keeping to minimize diff noise if preferred
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AlertDialog;
+import androidx.appcompat.app.AlertDialog; // No longer needed
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -48,8 +48,9 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     private MusicService musicService;
     private boolean serviceBound = false;
     
-    // Default API URL (Replace with your actual default if desired)
-    private static final String DEFAULT_API_URL = "https://test.1ink.us";
+    // Hardcoded API URL for ford442/storage_manager space
+    // Note: Using the direct .hf.space domain which is required for API calls
+    private static final String DEFAULT_API_URL = "https://ford442-storage-manager.hf.space";
     private String currentApiUrl = DEFAULT_API_URL;
 
     private List<Song> cloudSongs = new ArrayList<>();
@@ -91,8 +92,8 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         setupRecyclerView();
         setupClickListeners();
         
-        // Ask for API URL on launch
-        showApiUrlDialog();
+        // Directly fetch songs using the hardcoded URL instead of showing dialog
+        fetchSongsFromApi();
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -140,27 +141,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         btnPrevious.setOnClickListener(v -> { if (serviceBound && musicService != null) musicService.previous(); });
     }
     
-    private void showApiUrlDialog() {
-        final EditText input = new EditText(this);
-        input.setText(DEFAULT_API_URL);
-        input.setHint("https://your-app.hf.space");
-
-        new AlertDialog.Builder(this)
-                .setTitle("Connect to HF App API")
-                .setMessage("Enter your FastAPI URL:")
-                .setView(input)
-                .setPositiveButton("Connect", (dialog, which) -> {
-                    String url = input.getText().toString().trim();
-                    if (!url.isEmpty()) {
-                        // Ensure no trailing slash
-                        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
-                        currentApiUrl = url;
-                        fetchSongsFromApi();
-                    }
-                })
-                .setCancelable(false)
-                .show();
-    }
+    // Dialog method removed as it is no longer needed
 
     private void updateListView() {
         if (isShowingLibrary) {
@@ -208,8 +189,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     }
 
     private void fetchSongsFromApi() {
-        // Use 'music' as the folder name based on your previous structure
-        // If your new bucket structure uses 'songs', change "music" to "songs" below
+        // Use 'music' as the folder name
         String endpoint = currentApiUrl + "/api/storage/files?folder=music";
         
         Toast.makeText(this, "Fetching from API...", Toast.LENGTH_SHORT).show();
@@ -244,12 +224,11 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
                         if (isSupportedAudioFile(filename)) {
                             String fileUrl = fileObj.optString("url", null);
 
-                            // If API didn't return a URL, assume standard GCS structure if public,
-                            // or we might need a download endpoint.
+                            // Fallback if URL is missing
                             if (fileUrl == null || fileUrl.isEmpty() || fileUrl.equals("null")) {
-                                // Fallback construction if public_url is missing
-                                // Warning: This assumes bucket is public or signed
-                                fileUrl = "https://storage.googleapis.com/my-sd35-space-images-2025/music/" + filename;
+                                // If the API doesn't return a full URL, we construct one using the Space URL
+                                // This endpoint format depends on your specific API implementation
+                                fileUrl = currentApiUrl + "/file=" + filename; 
                             }
 
                             songs.add(new Song(Uri.parse(fileUrl), filename));
