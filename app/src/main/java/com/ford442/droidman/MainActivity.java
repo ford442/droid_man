@@ -1,8 +1,8 @@
 package com.ford442.droidman;
 
 import android.Manifest;
-import android.content.ComponentName;
 import android.app.ActivityManager;
+import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
@@ -14,20 +14,23 @@ import android.os.IBinder;
 import android.os.StatFs;
 import android.text.format.Formatter;
 import android.widget.Button;
+import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.xmlpull.v1.XmlPullParser;
-import org.xmlpull.v1.XmlPullParserFactory;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
@@ -38,16 +41,19 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
 
     private RecyclerView recyclerView;
     private SongAdapter adapter;
-    private Button btnSwitchView; // Renamed from btnSelectFolder
+    private Button btnSwitchView;
     private Button btnPlay, btnNext, btnPrevious;
     private TextView tvSongTitle, tvSongArtist, tvDeviceStatus, tvSubtitle;
 
     private MusicService musicService;
     private boolean serviceBound = false;
     
-    // Two lists: One for what's in the cloud, one for what's in RAM
+    // Default API URL (Replace with your actual default if desired)
+    private static final String DEFAULT_API_URL = "https://test.1ink.us";
+    private String currentApiUrl = DEFAULT_API_URL;
+
     private List<Song> cloudSongs = new ArrayList<>();
-    private boolean isShowingLibrary = true; // Track which view we are in
+    private boolean isShowingLibrary = true;
 
     private final ServiceConnection serviceConnection = new ServiceConnection() {
         @Override
@@ -66,7 +72,7 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
                     updatePlayButton(isPlaying);
                 }
             });
-            // Don't set playlist automatically, we build it manually now
+            updateListView();
         }
 
         @Override
@@ -85,10 +91,9 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         setupRecyclerView();
         setupClickListeners();
         
-        // Auto-connect to your bucket immediately
-        fetchSongsFromBucket();
+        // Ask for API URL on launch
+        showApiUrlDialog();
         
-        // Request notification permission for Android 13+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
@@ -119,7 +124,6 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
     }
 
     private void setupClickListeners() {
-        // Toggle between Cloud Library and RAM Playlist
         btnSwitchView.setOnClickListener(v -> {
             isShowingLibrary = !isShowingLibrary;
             updateListView();
@@ -136,6 +140,28 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         btnPrevious.setOnClickListener(v -> { if (serviceBound && musicService != null) musicService.previous(); });
     }
     
+    private void showApiUrlDialog() {
+        final EditText input = new EditText(this);
+        input.setText(DEFAULT_API_URL);
+        input.setHint("https://your-app.hf.space");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Connect to HF App API")
+                .setMessage("Enter your FastAPI URL:")
+                .setView(input)
+                .setPositiveButton("Connect", (dialog, which) -> {
+                    String url = input.getText().toString().trim();
+                    if (!url.isEmpty()) {
+                        // Ensure no trailing slash
+                        if (url.endsWith("/")) url = url.substring(0, url.length() - 1);
+                        currentApiUrl = url;
+                        fetchSongsFromApi();
+                    }
+                })
+                .setCancelable(false)
+                .show();
+    }
+
     private void updateListView() {
         if (isShowingLibrary) {
             btnSwitchView.setText("View: Cloud Library");
@@ -172,7 +198,6 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
 
         String statusText = String.format("Free RAM: %s  |  Free Storage: %s", availRam, availStorage);
 
-        // Safe color check
         if (memoryInfo.availMem < 200 * 1024 * 1024) {
             tvDeviceStatus.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_light));
         } else {
@@ -182,53 +207,56 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
         tvDeviceStatus.setText(statusText);
     }
 
-    // Hardcoded fetch for your specific bucket
-    private void fetchSongsFromBucket() {
-        String bucketName = "my-sd35-space-images-2025";
-        String folderPrefix = "music/";
+    private void fetchSongsFromApi() {
+        // Use 'music' as the folder name based on your previous structure
+        // If your new bucket structure uses 'songs', change "music" to "songs" below
+        String endpoint = currentApiUrl + "/api/storage/files?folder=music";
         
-        Toast.makeText(this, "Connecting to Cloud Library...", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Fetching from API...", Toast.LENGTH_SHORT).show();
 
         Executors.newSingleThreadExecutor().execute(() -> {
             List<Song> songs = new ArrayList<>();
             try {
-                String bucketBaseUrl = "https://storage.googleapis.com/" + bucketName;
-                URL listUrl = new URL(bucketBaseUrl + "?prefix=" + folderPrefix);
-
-                HttpURLConnection connection = (HttpURLConnection) listUrl.openConnection();
+                URL url = new URL(endpoint);
+                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                 connection.setRequestMethod("GET");
                 connection.setConnectTimeout(10000);
                 connection.setReadTimeout(10000);
 
-                InputStream inputStream = connection.getInputStream();
-                XmlPullParserFactory factory = XmlPullParserFactory.newInstance();
-                XmlPullParser parser = factory.newPullParser();
-                parser.setInput(inputStream, null);
-
-                int eventType = parser.getEventType();
-                String currentKey = null;
-
-                while (eventType != XmlPullParser.END_DOCUMENT) {
-                    String tagName = parser.getName();
-                    switch (eventType) {
-                        case XmlPullParser.START_TAG:
-                            if ("Key".equals(tagName)) currentKey = parser.nextText();
-                            break;
-                        case XmlPullParser.END_TAG:
-                            if ("Contents".equals(tagName) && currentKey != null) {
-                                if (isSupportedAudioFile(currentKey)) {
-                                    String fullUrl = bucketBaseUrl + "/" + currentKey;
-                                    String displayName = currentKey;
-                                    if (displayName.startsWith(folderPrefix)) {
-                                        displayName = displayName.substring(folderPrefix.length());
-                                    }
-                                    songs.add(new Song(Uri.parse(fullUrl), displayName));
-                                }
-                                currentKey = null;
-                            }
-                            break;
+                if (connection.getResponseCode() == 200) {
+                    BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
                     }
-                    eventType = parser.next();
+                    reader.close();
+
+                    // Parse JSON Response
+                    JSONObject jsonResponse = new JSONObject(response.toString());
+                    JSONArray files = jsonResponse.getJSONArray("files");
+
+                    for (int i = 0; i < files.length(); i++) {
+                        JSONObject fileObj = files.getJSONObject(i);
+                        String filename = fileObj.getString("filename");
+
+                        // Check if file is audio
+                        if (isSupportedAudioFile(filename)) {
+                            String fileUrl = fileObj.optString("url", null);
+
+                            // If API didn't return a URL, assume standard GCS structure if public,
+                            // or we might need a download endpoint.
+                            if (fileUrl == null || fileUrl.isEmpty() || fileUrl.equals("null")) {
+                                // Fallback construction if public_url is missing
+                                // Warning: This assumes bucket is public or signed
+                                fileUrl = "https://storage.googleapis.com/my-sd35-space-images-2025/music/" + filename;
+                            }
+
+                            songs.add(new Song(Uri.parse(fileUrl), filename));
+                        }
+                    }
+                } else {
+                    throw new Exception("HTTP Error: " + connection.getResponseCode());
                 }
 
                 runOnUiThread(() -> {
@@ -236,38 +264,34 @@ public class MainActivity extends AppCompatActivity implements SongAdapter.OnSon
                     if (isShowingLibrary) {
                         adapter.setSongs(cloudSongs);
                     }
-                    Toast.makeText(this, "Library loaded: " + songs.size() + " songs", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "API Loaded: " + songs.size() + " songs", Toast.LENGTH_SHORT).show();
                 });
 
             } catch (Exception e) {
                 e.printStackTrace();
-                runOnUiThread(() -> Toast.makeText(this, "Error: " + e.getMessage(), Toast.LENGTH_LONG).show());
+                runOnUiThread(() -> Toast.makeText(this, "API Error: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         });
     }
 
     private boolean isSupportedAudioFile(String name) {
         String lowerName = name.toLowerCase();
-        return lowerName.endsWith(".mp3") || lowerName.endsWith(".flac");
+        return lowerName.endsWith(".mp3") || lowerName.endsWith(".flac") || lowerName.endsWith(".wav");
     }
 
-    // New logic: Click behavior depends on the view mode
     @Override
     public void onSongClick(Song song, int position) {
         if (!serviceBound || musicService == null) return;
         
         if (isShowingLibrary) {
-            // LIBRARY MODE: Add to Playlist (RAM)
             musicService.addToPlaylist(song);
-            Toast.makeText(this, "Downloading to RAM: " + song.getTitle(), Toast.LENGTH_SHORT).show();
-            // Optional: Switch to playlist view automatically? 
-            // For now, let's just stay in library so user can add more.
+            Toast.makeText(this, "Adding to RAM: " + song.getTitle(), Toast.LENGTH_SHORT).show();
         } else {
-            // PLAYLIST MODE: Play the song
             musicService.playSong(position);
         }
     }
 
+    // ... UI Update methods remain the same ...
     private void updateNowPlaying(Song song) {
         runOnUiThread(() -> {
             if (song != null) {
